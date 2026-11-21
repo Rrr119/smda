@@ -44,6 +44,12 @@ class SmdaConfig:
     # cil and dalvik backends run their own analysis pipelines and ignore them
     # the queue to use for candidate management
     CANDIDATE_QUEUE = "PriorityQueue"  # choose from: ["BracketQueue", "PriorityQueue"]
+    # function-boundary identification policy. "baseline" keeps the historical candidate
+    # heuristics. "evidence" additionally promotes a terminal direct branch target that
+    # recursive traversal absorbed into its caller when the target is separated from the
+    # branch by padding, opens like an entry, or carries symbol/exception metadata. Opt-in,
+    # because it changes recovered boundaries.
+    FUNCTION_IDENTIFICATION_STRATEGY = "baseline"
     # improve disassembly by resolving references through data flows
     USE_ALIGNMENT = True
     USE_SYMBOLS_AS_CANDIDATES = True

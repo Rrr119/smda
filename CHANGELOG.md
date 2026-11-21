@@ -72,6 +72,17 @@ past roughly six lines it belongs in the PR the entry links.
 
 ### Added
 
+- **(core)** Recover absorbed tailcall boundaries with an opt-in evidence strategy and export the
+  resulting function call graph. `SmdaConfig.FUNCTION_IDENTIFICATION_STRATEGY = "evidence"` runs a
+  post-analysis pass that partitions a terminal direct branch target out of its caller when padding,
+  entry shape or symbol/exception metadata says it is a separate function; the candidate is marked
+  as a tailcall and the final graph records explicit `tail_call` edges, merging repeated sites
+  between the same pair. `SmdaReport.getCallGraph()` / `exportCallGraph()` emit JSON or DOT without
+  changing the report schema. *Measured on the bundled deterministic `tests/boundary_corpus.py`
+  (100 synthetic x86-64 samples, 611 truth starts):* exact function-start recall 511/611 (83.63%)
+  to 611/611 (100%), precision 100% throughout, 0 false positives. The default stays `"baseline"`,
+  so the golden fixture boundaries are unchanged; the new tests cover both strategies and the
+  call-graph export.
 - **(loaders)** Analyze ordinary x86/x64 ELF relocatable and COFF objects with deterministic section placement,
   section-relative symbols and supported relocations. Preserve the original input hash and record the derived layout,
   aliases and unresolved external references in `xmetadata.object_image`; no archive support is added.

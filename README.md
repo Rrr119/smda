@@ -223,6 +223,7 @@ The knobs most callers touch:
 | `API_COLLECTION_FILES` | `{}` | ApiScout WinAPI databases for API resolution in dumps |
 | `CALCULATE_HASHING` / `CALCULATE_NESTING` / `CALCULATE_SCC` | `True` | optional per-function metadata (PIC hashes, nesting depth, SCCs) |
 | `RESOLVE_TAILCALLS` | `False` | promote tailcall targets to functions of their own |
+| `FUNCTION_IDENTIFICATION_STRATEGY` | `"baseline"` | `"evidence"` also recovers terminal direct-branch targets absorbed into their caller |
 | `HIGH_ACCURACY`, `USE_*`, `RESOLVE_*`, `RECORD_*`, `CANDIDATE_QUEUE` | see source | candidate discovery; read by the `intel`, `aarch64` and `arm` backends only |
 | `MAX_FUNCTION_CANDIDATES`, `MAX_CALL_REFS_PER_CANDIDATE`, `MAX_INDIRECT_CALLS_PER_BASIC_BLOCK` | see source | safeguards against pathological input; do not disable them by default |
 
@@ -247,6 +248,19 @@ the spread being how much the measuring machine had to spare; on Go ELF and Mach
 adds 8 functions each, for 20-26%. A jump into an already-recovered function is treated as a tailcall
 either way -- only promoting targets that are not yet known needs this pass.
 
+`FUNCTION_IDENTIFICATION_STRATEGY = "evidence"` is the boundary-recovery counterpart. A tailcall is
+a terminal direct branch to another function, so recursive traversal can decode the callee as a
+successor block of the caller when no call instruction names it. The evidence strategy partitions
+that absorbed body back out when the target is separated from the branch by padding, opens like an
+entry, or already carries symbol/exception evidence. It is opt-in because it changes recovered
+functions; the default keeps the historical candidate set. On the bundled deterministic corpus of
+100 synthetic x86-64 samples, exact function-start recall moves from 511/611 to 611/611 with no
+false positives. Reproduce it with:
+
+```bash
+python -m tests.boundary_corpus --output artifacts/boundary_accuracy_comparison.json
+```
+
 `TIMEOUT` bounds analysis cooperatively, not as a wall-clock guarantee. It is polled between
 candidates, between passes, every 256 basic blocks within a function, between tailcall resolutions,
 and inside the record walks that carve an exception table out of a headerless image; label providers
@@ -269,6 +283,24 @@ Each function carries `blocks` (block offset to instruction list), `blockrefs`, 
 `function_name`, `pic_hash`, `confidence`, `binweight`, `nesting_depth`,
 `strongly_connected_components` and `tfidf`. An instruction is a compact list of offset, bytes and
 mnemonic/operands; `SmdaInstruction` exposes it with accessors.
+
+### Call graph
+
+`report.getCallGraph()` builds a function-level graph from the report without changing the
+serialized report shape. Repeated call sites between the same pair of functions are merged into one
+edge, and tail calls are explicit `tail_call` edges rather than being lost as ordinary jumps:
+
+```python
+graph = report.getCallGraph()
+graph.toDict()  # JSON-serializable nodes/edges/call_sites
+graph.toDot()  # Graphviz, dashed edges for tail calls
+report.exportCallGraph("sample.dot")
+report.exportCallGraph("sample.json", include_tailcall_chains=True)
+```
+
+The `analyze.py` CLI exposes the same output through `--callgraph sample.dot` (or `.json`). Pass
+`--function-identification-strategy evidence` to use the boundary-recovery policy from the command
+line.
 
 ### What an offset means
 

@@ -257,6 +257,24 @@ class SmdaReport:
             )
         yield from self._sorted_functions
 
+    def getCallGraph(self, merge_tailcalls=True, include_tailcall_chains=False):
+        """Build a function-level graph; tail calls are explicit edges."""
+        from smda.common.CallGraph import CallGraph
+
+        return CallGraph.fromReport(
+            self,
+            merge_tailcalls=merge_tailcalls,
+            include_tailcall_chains=include_tailcall_chains,
+        )
+
+    def toCallGraphDict(self, **kwargs):
+        return self.getCallGraph(**kwargs).toDict()
+
+    def exportCallGraph(self, output_filepath, output_format=None, **kwargs):
+        graph = self.getCallGraph(**kwargs)
+        graph.write(output_filepath, output_format=output_format)
+        return graph
+
     def getExportedFunctions(self):
         if getattr(self, "_sorted_exported_functions", None) is None:
             self._sorted_exported_functions = [

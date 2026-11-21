@@ -183,6 +183,24 @@ if __name__ == "__main__":
         help="Optionally write the output to a file (JSON format).",
     )
     PARSER.add_argument(
+        "--callgraph",
+        type=str,
+        default="",
+        help="Optionally write the function call graph to a .json or .dot file.",
+    )
+    PARSER.add_argument(
+        "--function-identification-strategy",
+        choices=("baseline", "evidence"),
+        default="baseline",
+        help="Boundary identification policy; 'evidence' also recovers absorbed tailcall targets.",
+    )
+    PARSER.add_argument(
+        "--resolve-tailcalls",
+        action="store_true",
+        default=False,
+        help="Promote not-yet-known direct tailcall targets to functions.",
+    )
+    PARSER.add_argument(
         "-s",
         "--strings",
         action="store_true",
@@ -206,6 +224,8 @@ if __name__ == "__main__":
 
     # optionally create and set up a config, e.g. when using ApiScout profiles for WinAPI import usage discovery
     config = SmdaConfig()
+    config.FUNCTION_IDENTIFICATION_STRATEGY = ARGS.function_identification_strategy
+    config.RESOLVE_TAILCALLS = ARGS.resolve_tailcalls
     if ARGS.strings:
         config.WITH_STRINGS = True
     if ARGS.verbose:
@@ -250,3 +270,5 @@ if __name__ == "__main__":
         output_file = os.path.join(ARGS.output_path, INPUT_FILENAME + ".smda")
         with open(output_file, "w") as fout:
             json.dump(SMDA_REPORT.toDict(), fout, indent=1, sort_keys=True)
+    if SMDA_REPORT and ARGS.callgraph:
+        SMDA_REPORT.exportCallGraph(ARGS.callgraph)

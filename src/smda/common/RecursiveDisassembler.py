@@ -9,6 +9,7 @@ from itertools import chain
 from smda.common.analysis_budget import analysisTimeoutTripped
 from smda.common.BinaryInfo import BinaryInfo
 from smda.common.ExceptionHandling import reraise_non_operational_exception
+from smda.common.FunctionIdentificationStrategy import resolveFunctionIdentificationStrategy
 from smda.common.labelprovider.DelphiKbSymbolProvider import DelphiKbSymbolProvider
 from smda.common.labelprovider.DelphiPythiaProvider import DelphiPythiaProvider
 from smda.common.labelprovider.DelphiReSymProvider import DelphiReSymProvider
@@ -22,6 +23,7 @@ from smda.common.labelprovider.PeSymbolProvider import PeSymbolProvider
 from smda.common.labelprovider.RustSymbolProvider import RustSymbolProvider
 from smda.common.labelprovider.WinApiResolver import WinApiResolver
 from smda.common.TailcallAnalyzer import TailcallAnalyzer
+from smda.common.TailcallMerger import mergeAbsorbedTailcalls
 from smda.DisassemblyResult import DisassemblyResult
 
 LOGGER = logging.getLogger(__name__)
@@ -45,6 +47,9 @@ class RecursiveDisassembler:
 
     def __init__(self, config, backend, forced_bitness=None):
         self.config = config
+        self.config.FUNCTION_IDENTIFICATION_STRATEGY = resolveFunctionIdentificationStrategy(
+            getattr(config, "FUNCTION_IDENTIFICATION_STRATEGY", "baseline")
+        )
         self.backend = backend
         self._forced_bitness = forced_bitness
         self.capstone = None
@@ -544,6 +549,9 @@ class RecursiveDisassembler:
             binary_info.binary_size,
             binary_info.base_addr,
         )
+        self.config.FUNCTION_IDENTIFICATION_STRATEGY = resolveFunctionIdentificationStrategy(
+            getattr(self.config, "FUNCTION_IDENTIFICATION_STRATEGY", "baseline")
+        )
         self._symbol_cache = {}
         self._api_cache = {}
         self._cb_analysis_timeout = cbAnalysisTimeout
@@ -642,6 +650,16 @@ class RecursiveDisassembler:
             LOGGER.debug("Finished tailcall analysis, functions.")
             # drain any candidates that were added during tailcall resolution
             self._drainCandidateQueue(cbAnalysisTimeout)
+        if self.config.FUNCTION_IDENTIFICATION_STRATEGY.split_absorbed_tailcalls:
+            promoted_tailcalls = mergeAbsorbedTailcalls(self)
+            if promoted_tailcalls:
+                LOGGER.debug(
+                    "Evidence strategy promoted %d absorbed tailcall boundaries.",
+                    len(promoted_tailcalls),
+                )
+                for addr in promoted_tailcalls:
+                    self.fc_manager.addTailcallCandidate(addr)
+                self._drainCandidateQueue(cbAnalysisTimeout)
         if self.config.USE_PE_X64_PDATA_ENDS:
             self._splitMergedFunctionsAtPdataEnds(cbAnalysisTimeout)
         self.disassembly.failed_analysis_addr = self.fc_manager.getAbortedCandidates()
@@ -701,7 +719,7 @@ class RecursiveDisassembler:
         for fn_start, genuine_splits in sorted(split_points_by_owner.items()):
             if self._analysisTimeoutTripped(cbAnalysisTimeout):
                 break
-            splits_performed += self._partitionFunctionAtPdataEnds(fn_start, genuine_splits)
+            splits_performed += self._partitionFunctionAtBoundaries(fn_start, genuine_splits)
         return splits_performed
 
     def _drainCandidateQueue(self, cbAnalysisTimeout):
@@ -737,6 +755,9 @@ class RecursiveDisassembler:
         return False
 
     def _partitionFunctionAtPdataEnds(self, fn_start, split_points):
+        return self._partitionFunctionAtBoundaries(fn_start, split_points)
+
+    def _partitionFunctionAtBoundaries(self, fn_start, split_points):
         split_points = sorted(set(split_points))
         segment_starts = [fn_start, *split_points]
         partitioned_blocks = {start: [] for start in segment_starts}
